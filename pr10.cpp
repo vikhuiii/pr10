@@ -97,11 +97,11 @@ public:
         system("cls");
         std::cout << "Счет: " << score << std::endl;
         std::cout << "WASD - движение, E - сохранить, Q - выход\n\n";
-        for (int i = 0; i < SIZE + 2; i++) std::cout << "-";
+        for (int i = 0; i < SIZE + 2; i++) std::cout << "#";
         std::cout << std::endl;
 
         for (int y = 0; y < SIZE; y++) {
-            std::cout << "-";
+            std::cout << "#";
             for (int x = 0; x < SIZE; x++) {
                 if (head != nullptr && head->x == x && head->y == y) {
                     std::cout << "O";
@@ -116,9 +116,9 @@ public:
                     std::cout << " ";
                 }
             }
-            std::cout << "-\n";
+            std::cout << "#\n";
         }
-        for (int i = 0; i < SIZE + 2; i++) std::cout << "-";
+        for (int i = 0; i < SIZE + 2; i++) std::cout << "#";
         std::cout << std::endl;
     }
 
@@ -133,33 +133,278 @@ public:
         else if ((c == 'a' || c == 'A') && napr != 1) napr = 3;
 
         if (c == 'q' || c == 'Q') return 'Q';
-        if (c == 'p' || c == 'P') return 'S';
+        if (c == 'e' || c == 'E') return 'S';
         return 0;
     }
 
+    void moveTailToHead(int x, int y) {
+        if (head == nullptr) return;
 
+        if (head == tail) {
+            head->x = x;
+            head->y = y;
+            return;
+        }
+
+        Segment* beforeTail = head;
+        while (beforeTail->next != tail) {
+            beforeTail = beforeTail->next;
+        }
+
+        Segment* oldTail = tail;
+        beforeTail->next = nullptr;
+        tail = beforeTail;
+
+        oldTail->x = x;
+        oldTail->y = y;
+        oldTail->next = head;
+        head = oldTail;
+    }
+
+    void step() {
+        int x = head->x;
+        int y = head->y;
+        switch (napr) {
+        case 0: {
+            y--;
+            break;
+        }
+        case 1: {
+            x++;
+            break;
+        }
+        case 2: {
+            y++;
+            break;
+        }
+        case 3: {
+            x--;
+            break;
+        }
+        }
+        
+        if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) {
+            game = false;
+            return;
+        }
+        if (isSegIn(x, y, false)) {
+            game = false;
+            return;
+        }
+        if (x == foodX && y == foodY) {
+            addHead(x, y);
+            score += 10;
+            generateFood();
+        }
+        else {
+            moveTailToHead(x, y);
+        }
+        
+    }
+    bool run() {
+        while (game) {
+            print();
+            char action = Upr();
+
+            if (action == 'Q') return false;
+            if (action == 'S') {
+                saveGame("save.bin");
+                std::cout << "\nИгра сохранена\n";
+                std::cout << "Нажмите любую клавишу...\n";
+                _getch();
+                return true;
+            }
+            step();
+            Sleep(200);
+        }
+        print();
+        std::cout << "\nИГРА ОКОНЧЕНА\n";
+        std::cout << "Ваш счёт: " << score << "\n";
+
+        std::cout << "Введите имя: ";
+        char name[50];
+        std::cin >> name;
+        addRecord(name, score);
+
+        std::cout << "Нажмите любую клавишу...";
+        _getch();
+        return false;
+    }
+
+    void saveGame(const char* fileN) {
+        std::ofstream file(fileN, std::ios::binary);
+        if (!file) {
+            std::cout << "Ошибка открытия файла";
+            return;
+        }
+        file.write(reinterpret_cast<const char*>(&score), sizeof(score));
+        file.write(reinterpret_cast<const char*>(&napr), sizeof(napr));
+        file.write(reinterpret_cast<const char*>(&foodX), sizeof(foodX));
+        file.write(reinterpret_cast<const char*>(&foodY), sizeof(foodY));
+        file.write(reinterpret_cast<const char*>(&length), sizeof(length));
+        Segment* cur = head;
+        while (cur != nullptr) {
+            file.write(reinterpret_cast<const char*>(&cur->x), sizeof(cur->x));
+            file.write(reinterpret_cast<const char*>(&cur->y), sizeof(cur->y));
+            cur = cur->next;
+        }
+        file.close();
+    }
+
+    bool loadGame(const char* fileN) {
+        std::ifstream file(fileN, std::ios::binary);
+        if (!file)return false;
+        clear();
+
+        file.read(reinterpret_cast<char*>(&score), sizeof(score));
+        file.read(reinterpret_cast< char*>(&napr), sizeof(napr));
+        file.read(reinterpret_cast< char*>(&foodX), sizeof(foodX));
+        file.read(reinterpret_cast< char*>(&foodY), sizeof(foodY));
+        file.read(reinterpret_cast< char*>(&length), sizeof(length));
+
+        for (int i = 0; i < length; i++) {
+            int x;
+            int y;
+            file.read(reinterpret_cast<char*>(&x), sizeof(x));
+            file.read(reinterpret_cast<char*>(&y), sizeof(y));
+            
+            Segment* s = new Segment;
+            s->x = x;
+            s->y = y;
+            s->next = nullptr;
+
+            if (head == nullptr) {
+                head = s;
+                tail = s;
+            }
+            else {
+                tail->next = s;
+                tail = s;
+            }
+        }
+        file.close();
+        game = true;
+        return true;
+    }
+
+    struct Record {
+        char name[50];
+        int score;
+    };
+
+    void addRecord(const char* name, int sc) {
+        Record rec[10];
+        int count = 0;
+
+        std::ifstream in("records.bin", std::ios::binary);
+        if (in) {
+            in.seekg(0, std::ios::end);
+            std::streamsize fileSize = in.tellg();
+            in.seekg(0, std::ios::beg);
+            count = fileSize / sizeof(Record);
+            if (count > 10)count = 10;
+
+            for (int i = 0; i < count; i++) {
+                in.read(reinterpret_cast<char*>(&rec[i]), sizeof(Record));
+            }
+            in.close();
+        }
+        Record newR;
+        int i = 0;
+        while (name[i] != '\0' && i < 49) {
+            newR.name[i] = name[i];
+            i++;
+        }
+        newR.name[i] = '\0';
+        newR.score = sc;
+        rec[count] = newR;
+        count++;
+
+        std::ofstream out("records.bin", std::ios::binary);
+        if (!out) return;
+        for (int j = 0; j < count; j++) {
+            out.write(reinterpret_cast<const char*>(&rec[j]), sizeof(Record));
+        }
+        out.close();
+    }
+
+    void showRec() {
+        std::ifstream in("records.bin", std::ios::binary);
+        if (!in) {
+            std::cout << "Таблица рекордов пуста\n";
+            return;
+        }
+        in.seekg(0, std::ios::end);
+        std::streamsize fileSize = in.tellg();
+        in.seekg(0, std::ios::beg);
+        int count = fileSize / sizeof(Record);
+
+        if (count == 0) {
+            std::cout << "Таблица рекордов пуста\n";
+            in.close();
+            return;
+        }
+
+        std::cout << "\nТАБЛИЦА РЕКОРДОВ\n";
+        for (int i = 0; i < count; i++) {
+            Record r;
+            in.read(reinterpret_cast<char*>(&r), sizeof(Record));
+            std::cout << i + 1 << ". " << r.name << " - " << r.score << "\n";
+        }
+        in.close();
+    }
 };
 
 
 int main()
 {
+    setlocale(LC_ALL, "Russian");
+    srand(time(NULL));
 
-    int answ;
-    char pole[20][20];
-    std::ofstream file("data.bin", std::ios::binary);
-    std::ofstream rec("rec.bin", std::ios::binary);
-    Snake snake;
-    
-    
+    Snake game;
+    int answ = 0;
 
     while (answ != 4) {
+        system("cls");
         std::cout << "1. Новая игра" << std::endl;
         std::cout << "2. Загрузить игру" << std::endl;
         std::cout << "3. Таблица рекордов" << std::endl;
         std::cout << "4. Выход" << std::endl;
         std::cin >> answ;
         
-
+        switch (answ) {
+            case 1:{
+                game.newGame();
+                game.run();
+                break;
+            }
+            case 2: {
+                if (game.loadGame("save.bin")) {
+                    std::cout << "Игра загружена, нажмите любую клавишу...\n";
+                    _getch();
+                    game.run();
+                }
+                else {
+                    std::cout << "Файл сохранения не найден, нажмите любую клавишу...\n";
+                    _getch();
+                }
+                break;
+            }
+            case 3: {
+                game.showRec();
+                std::cout << "Нажмите любую клавишу...";
+                _getch();
+                break;
+            }
+            case 4: {
+                std::cout << "Выход\n";
+                break;
+            }
+            default: {
+                std::cout << "Неверный ответ\nНажмите любую клавишу...";
+                _getch();
+            }
+        }
     }
 }
 
